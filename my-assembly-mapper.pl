@@ -1,8 +1,10 @@
 use strict;
 use warnings;
 
-use Bio::EnsEMBL::Registry qw();
 use JSON::XS qw();
+use Getopt::Long;
+
+use Bio::EnsEMBL::Registry qw();
 
 =pod
 
@@ -13,16 +15,70 @@ use JSON::XS qw();
 
     answer can be compared with http://rest.ensembl.org/map/human/GRCh38/10:25000..30000:1/GRCh37?content-type=application/json
 
+    perl .. --species=homo_sapiens --assembly_from=GRCh37 --assembly_to=GRCh38 --region=10:25000-30000:1
+
 =cut
 
-my $host = 'ensembldb.ensembl.org';
-my $port = 3306;
-my $user = 'anonymous';
+my $cnf = {
+    test => 0,
+    host => 'ensembldb.ensembl.org', # mysql-eg-publicsql.ebi.ac.uk
+    assembly_from => '',
+    assembly_to => '',
+    species => '',
+    region => '',
+    coord_system => 'chromosome',
+    help => 0
+};
 
-if (0) {
-  $host = 'mysql-eg-publicsql.ebi.ac.uk';
-  $port = 4157;
+GetOptions(
+    'test' => \$cnf->{test},
+    'host=s' => \$cnf->{host},
+    'assembly_from=s' => \$cnf->{assembly_from},
+    'assembly_to=s' => \$cnf->{assembly_to},
+    'species=s' => \$cnf->{species},
+    'region=s' => \$cnf->{region},
+    'coord_system=s' => \$cnf->{coord_system},
+    'help' => \$cnf->{help},
+);
+
+help('assembly_from') unless $cnf->{assembly_from} and $cnf->{species} and $cnf->{region};
+
+sub help {
+    if (@_) {
+        my $trouble_field = shift;
+        print "\tFiled '$trouble_field' is missing or incorrect.\n\t--\n";
+    }
+    my $help = qq<
+    Usage:
+    $0 --species=species --file=filename
+    $0 --help
+
+    Mandatory:
+        --assembly_from=[string]
+            Version of the input assembly, i.e. 'GRCh38'
+        --species=[string]
+            Species name/alias, i.e. 'homo_sapiens'.
+        --region=[string]
+            Query region, i.e. 7:1000000-1000100:1
+
+    Optional:
+        --test
+            To compare result with http://rest.ensembl.org/documentation/info/assembly_map
+        --host=[string]
+            By default ensembldb.ensembl.org (mysql-eg-publicsql.ebi.ac.uk is another possibility)
+        --assembly_to=[string]
+            Version of the output assembly, i.e. 'GRCh38'
+        --coord_system=[string]
+            Name of the input coordinate system. 'chromosome' by default.
+
+    Usage example:
+        perl $0 --species=homo_sapiens --assembly_from=GRCh38 --assembly_to=GRCh37 --region=10:25000-30000:1
+        
+    >;
+    print $help;
+    exit;
 }
+
 
 Bio::EnsEMBL::Registry->load_registry_from_db(
     '-HOST' => $host,
