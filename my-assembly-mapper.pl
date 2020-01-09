@@ -28,6 +28,7 @@ use Bio::EnsEMBL::Registry qw();
 
 =head2 GITHUB SOURCES
 
+    <https://github.com/Ensembl/ensembl/tree/release/98/modules>
     <https://github.com/Ensembl/ensembl-rest/blob/release/98/lib/EnsEMBL/REST/Controller/Map.pm#L91>
     <https://github.com/Ensembl/ensembl-tools/blob/release/98/scripts/assembly_converter/AssemblyMapper.pl>
 
