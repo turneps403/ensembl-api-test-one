@@ -15,7 +15,7 @@ use Bio::EnsEMBL::Registry qw();
 
     answer can be compared with http://rest.ensembl.org/map/human/GRCh38/10:25000..30000:1/GRCh37?content-type=application/json
 
-    perl .. --species=homo_sapiens --assembly_from=GRCh37 --assembly_to=GRCh38 --region=10:25000-30000:1
+    perl .. --species=homo_sapiens --assembly_from=GRCh37 --assembly_to=GRCh38 --region=10:25000..30000:1
 
 =cut
 
@@ -27,7 +27,8 @@ my $cnf = {
     species => '',
     region => '',
     coord_system => 'chromosome',
-    help => 0
+    target_coord_system => 'chromosome',
+    help => @ARGV ? 0 : 1, # after GetOptions ARGV would be empty
 };
 
 GetOptions(
@@ -38,15 +39,27 @@ GetOptions(
     'species=s' => \$cnf->{species},
     'region=s' => \$cnf->{region},
     'coord_system=s' => \$cnf->{coord_system},
+    'target_coord_system=s' => \$cnf->{target_coord_system},
     'help' => \$cnf->{help},
 );
 
-help('assembly_from') unless $cnf->{assembly_from} and $cnf->{species} and $cnf->{region};
+help() if $cnf->{help};
+
+# check mandatory arguments
+for (qw(assembly_from species region)) {
+    help('assembly_from') unless $cnf->{$_};
+}
+
+my $res = main();
+test($res) if $cnf->{test};
 
 sub help {
     if (@_) {
         my $trouble_field = shift;
-        print "\tFiled '$trouble_field' is missing or incorrect.\n\t--\n";
+        my $error = "Error: filed '$trouble_field' is missing or incorrect.";
+        print "    ".('_' x length($error))."\n";
+        print "    ".$error."\n";
+        print "    ".('_' x length($error))."\n";
     }
     my $help = qq<
     Usage:
@@ -70,67 +83,71 @@ sub help {
             Version of the output assembly, i.e. 'GRCh38'
         --coord_system=[string]
             Name of the input coordinate system. 'chromosome' by default.
+        --target_coord_system=[string]
+            Name of the output coordinate system. 'chromosome' by default.
 
     Usage example:
-        perl $0 --species=homo_sapiens --assembly_from=GRCh38 --assembly_to=GRCh37 --region=10:25000-30000:1
-        
+        perl $0 --species=homo_sapiens --assembly_from=GRCh38 --assembly_to=GRCh37 --region=10:25000..30000:1
+
     >;
     print $help;
     exit;
 }
 
+sub main {
+    Bio::EnsEMBL::Registry->load_registry_from_db(
+        '-host' => $cnf->{host},
+        '-species' => $cnf->{species}, # try to avoid to load unnecessary data from mysql
+        #'-verbose' => 1
+    );
 
-Bio::EnsEMBL::Registry->load_registry_from_db(
-    '-HOST' => $host,
-    '-SPECIES' => 'homo_sapiens' # try to avoid to load unnecessary data from mysql
-    #'-port' => $port,
-    #'-user' => $user,
-    #'-verbose' => 1
-);
-my $slice_adaptor = Bio::EnsEMBL::Registry->get_adaptor( 'human', 'Core', 'Slice' );
+    my $slice_adaptor = Bio::EnsEMBL::Registry->get_adaptor( $cnf->{species}, 'Core', 'Slice' );
 
-my ($coord_system, $old_sr_name, $old_start, $old_end, $old_strand, $old_assembly) =
-('chromosome', 10, 25_000, 30_000, 1, 'GRCh38');
+    # check region. valid values looks like 10:25000-30000:1, 10:25000-30000:, 10:25000-30000, 10:0-30000:-1
+    my ($old_sr_name, $old_start, $old_end, $old_strand) = $cnf->{region} =~ /(\d+):(\d+)\.{2}(\d+)(?::(-?\d+))?/;
+    help('region') unless $old_sr_name and $old_end and defined $old_start;
 
-my $old_slice = $slice_adaptor->fetch_by_region($coord_system, $old_sr_name, $old_start, $old_end, $old_strand, $old_assembly);
+    my $old_slice = $slice_adaptor->fetch_by_region(
+        $cnf->{coord_system}, $old_sr_name, $old_start, $old_end, $old_strand, $cnf->{assembly_from}
+    );
 
-$coord_system = $old_slice->coord_system_name();
-$old_sr_name = $old_slice->seq_region_name();
-$old_start   = $old_slice->start();
-$old_end     = $old_slice->end();
-$old_strand  = $old_slice->strand()*1;
-$old_assembly = $old_slice->coord_system()->version();
+    $cnf->{coord_system} = $old_slice->coord_system_name();
+    $old_sr_name = $old_slice->seq_region_name();
+    $old_start   = $old_slice->start();
+    $old_end     = $old_slice->end();
+    $old_strand  = int($old_slice->strand() || 0);
+    $cnf->{assembly_from} = $old_slice->coord_system()->version();
 
-my @decoded_segments = ();
-eval {
-    my $projection = $old_slice->project('chromosome', 'GRCh37');
-    foreach my $segment ( @{$projection} ) {
-      my $mapped_slice = $segment->to_Slice;
-      my $mapped_data = {
-        original => {
-          coord_system => $coord_system,
-          assembly => $old_assembly,
-          seq_region_name => $old_sr_name,
-          start => ($old_start + $segment->from_start() - 1) * 1,
-          end => ($old_start + $segment->from_end() - 1) * 1,
-          strand => $old_strand,
-        },
-        mapped => {
-          coord_system => $mapped_slice->coord_system->name,
-          assembly => $mapped_slice->coord_system->version,
-          seq_region_name => $mapped_slice->seq_region_name(),
-          start => $mapped_slice->start() * 1,
-          end => $mapped_slice->end() * 1,
-          strand => $mapped_slice->strand(),
-        },
-      };
-      push(@decoded_segments, $mapped_data);
-    }
-};
+    my $projection = $old_slice->project($cnf->{target_coord_system}, $cnf->{assembly_to});
 
-my $ret = {mappings => \@decoded_segments};
-print JSON::XS->new->pretty(1)->encode($ret)."\n";
+    my @decoded_segments = map {
+        my $mapped_slice = $_->to_Slice;
+        +{
+          original => {
+            coord_system => $cnf->{coord_system},
+            assembly => $cnf->{assembly_from},
+            seq_region_name => $old_sr_name,
+            start => $old_start + $_->from_start() - 1,
+            end => $old_start + $_->from_end() - 1,
+            strand => $old_strand,
+          },
+          mapped => {
+            coord_system => $mapped_slice->coord_system->name,
+            assembly => $mapped_slice->coord_system->version,
+            seq_region_name => $mapped_slice->seq_region_name(),
+            start => int $mapped_slice->start(),
+            end => int $mapped_slice->end(),
+            strand => $mapped_slice->strand(),
+          },
+        };
+    } @$projection;
+
+    my $ret = {mappings => \@decoded_segments};
+    print JSON::XS->new->pretty(1)->encode($ret)."\n";
+    return $ret;
+}
 
 
+print "\nWork time: ".(time - $^T)."s\n";
 exit;
 __END__
