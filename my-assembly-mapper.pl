@@ -3,19 +3,33 @@ use warnings;
 
 use JSON::XS qw();
 use Getopt::Long;
+use LWP qw();
+use URI qw();
 
 use Bio::EnsEMBL::Registry qw();
 
-=pod
 
-    http://rest.ensembl.org/documentation/info/assembly_map
-    https://github.com/Ensembl/ensembl-rest/blob/release/98/lib/EnsEMBL/REST/Controller/Map.pm#L91
+=head1 DESCRIPTION
 
-    as base style https://github.com/Ensembl/ensembl-tools/blob/release/98/scripts/assembly_converter/AssemblyMapper.pl
+    Script to convert the co-ordinates of one assembly to another
 
-    answer can be compared with http://rest.ensembl.org/map/human/GRCh38/10:25000..30000:1/GRCh37?content-type=application/json
+=head1 USAGE EXAMPLE
 
-    perl .. --species=homo_sapiens --assembly_from=GRCh37 --assembly_to=GRCh38 --region=10:25000..30000:1
+    perl my-assembly-mapper.pl --help
+    perl my-assembly-mapper.pl --species=homo_sapiens --assembly_from=GRCh38 --assembly_to=GRCh37 --region=10:25000..30000:1
+
+=head1 SEE ALSO
+
+    L<Bio::EnsEMBL>, L<BioPerl>
+
+=head2 WEB SOURCES
+
+    <http://rest.ensembl.org/documentation/info/assembly_map>
+
+=head2 GITHUB SOURCES
+
+    <https://github.com/Ensembl/ensembl-rest/blob/release/98/lib/EnsEMBL/REST/Controller/Map.pm#L91>
+    <https://github.com/Ensembl/ensembl-tools/blob/release/98/scripts/assembly_converter/AssemblyMapper.pl>
 
 =cut
 
@@ -122,6 +136,7 @@ sub main {
 
     my @decoded_segments = map {
         my $mapped_slice = $_->to_Slice;
+        $cnf->{assembly_to} ||= $mapped_slice->coord_system->version;
         +{
           original => {
             coord_system => $cnf->{coord_system},
@@ -147,6 +162,66 @@ sub main {
     return $ret;
 }
 
+sub test {
+    my $res = shift;
+
+    # 'http://rest.ensembl.org/map/human/GRCh38/10:25000..30000:1/GRCh37?content-type=application/json'
+    my $url = URI->new('http://rest.ensembl.org');
+    $url->path_segments('map', $cnf->{species}, $cnf->{assembly_from}, $cnf->{region}, $cnf->{assembly_to});
+    $url->query_form(
+        'content-type' => 'application/json',
+        coord_system => $cnf->{coord_system},
+        target_coord_system => $cnf->{target_coord_system},
+    );
+
+    my $resp = LWP::UserAgent->new(timeout => 100)->get($url);
+    if ($resp->code != 200) {
+        print "Test FAIL because url not response with 200 Ok. $url\n";
+        return;
+    }
+    my $data = eval { JSON::XS->new->decode($resp->content) };
+    if ($@) {
+        print "Test FAIL because json is malformed: $@. $url\n";
+        return;
+    }
+
+    $res = [sort {
+        $a->{mapped}->{start} <=> $b->{mapped}->{start}
+        || $a->{mapped}->{end} <=> $b->{mapped}->{end}
+        # not sure that real need .. but!
+        || $a->{original}->{start} <=> $b->{original}->{start}
+        || $a->{original}->{end} <=> $b->{original}->{end}
+    } @{$res->{mappings}}];
+
+    $data = [sort {
+        $a->{mapped}->{start} <=> $b->{mapped}->{start}
+        || $a->{mapped}->{end} <=> $b->{mapped}->{end}
+        # not sure that real need .. but!
+        || $a->{original}->{start} <=> $b->{original}->{start}
+        || $a->{original}->{end} <=> $b->{original}->{end}
+    } @{$data->{mappings}}];
+
+    if (@$res != @$data) {
+        print "Test FAIL. $url\n";
+        return;
+    }
+
+    while (@$data) {
+        my $d = shift @$data;
+        my $r = shift @$res;
+        # $DB::signal = 1;
+        if (grep {
+            $d->{original}->{$_} ne $r->{original}->{$_}
+            || $d->{mapped}->{$_} ne $r->{mapped}->{$_}
+        } qw(end assembly coord_system seq_region_name strand start)) {
+            print "Test FAIL. $url\n";
+            return;
+        }
+    }
+
+    print "Test PASS. $url\n";
+    return;
+}
 
 print "\nWork time: ".(time - $^T)."s\n";
 exit;
