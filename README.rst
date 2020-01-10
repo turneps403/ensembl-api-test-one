@@ -1,7 +1,11 @@
 DESCRIPTION
 ===========
 
-Script to convert the co-ordinates of one assembly to another
+Scripts to convert the co-ordinates of one assembly to another.
+
+* my-assembly-mapper.pl contains a sample of working with Perl API with a single region
+* my-bunch-mapper.pl just sending a bunch of request to REST API
+
 
 USAGE EXAMPLE
 =============
@@ -10,12 +14,26 @@ USAGE EXAMPLE
 
         perl my-assembly-mapper.pl --help
         perl my-assembly-mapper.pl --species=homo_sapiens --assembly_from=GRCh38 --assembly_to=GRCh37 --region=10:25000..30000:1
+        perl my-bunch-mapper.pl --assembly_from=GRCh38 --assembly_to=GRCh37 --file=regions.txt
+        perl my-bunch-mapper.pl --help
 
-SEE ALSO
-========
+DEPENDENCIES
+============
+
+my-assembly-mapper.pl
+---------------------
 
 * Bio::EnsEMBL
 * BioPerl
+
+my-bunch-mapper.pl
+------------------
+
+* AnyEvent
+* AnyEvent::HTTP
+
+SEE ALSO
+========
 
 WEB SOURCES
 -----------
