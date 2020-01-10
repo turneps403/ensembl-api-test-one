@@ -62,7 +62,7 @@ help() if $cnf->{help};
 
 # check mandatory arguments
 for (qw(assembly_from species region)) {
-    help('assembly_from') unless $cnf->{$_};
+    help($_) unless $cnf->{$_};
 }
 
 my $res = main();
@@ -77,9 +77,9 @@ sub help {
         print "    ".('_' x length($error))."\n";
     }
     my $help = qq<
-    Usage:
-    $0 --species=species --file=filename
-    $0 --help
+    Usage example:
+        perl $0 --species=homo_sapiens --assembly_from=GRCh38 --assembly_to=GRCh37 --region=10:25000..30000:1
+        perl $0 --help
 
     Mandatory:
         --assembly_from=[string]
@@ -101,9 +101,6 @@ sub help {
         --target_coord_system=[string]
             Name of the output coordinate system. 'chromosome' by default.
 
-    Usage example:
-        perl $0 --species=homo_sapiens --assembly_from=GRCh38 --assembly_to=GRCh37 --region=10:25000..30000:1
-
     >;
     print $help;
     exit;
@@ -119,8 +116,8 @@ sub main {
     my $slice_adaptor = Bio::EnsEMBL::Registry->get_adaptor( $cnf->{species}, 'Core', 'Slice' );
 
     # check region. valid values looks like 10:25000-30000:1, 10:25000-30000:, 10:25000-30000, 10:0-30000:-1
-    my ($old_sr_name, $old_start, $old_end, $old_strand) = $cnf->{region} =~ /(\d+):(\d+)\.{2}(\d+)(?::(-?\d+))?/;
-    help('region') unless $old_sr_name and $old_end and defined $old_start;
+    my ($old_sr_name, $old_start, $old_end, $old_strand) = $cnf->{region} =~ /(\d+):(\d+)\.{2}(\d+)(?::(-?\d+)?)?/;
+    help('region') unless $old_sr_name and $old_end and defined $old_start and $old_end >= $old_start;
 
     my $old_slice = $slice_adaptor->fetch_by_region(
         $cnf->{coord_system}, $old_sr_name, $old_start, $old_end, $old_strand, $cnf->{assembly_from}
